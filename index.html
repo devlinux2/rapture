@@ -1,646 +1,89 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Rapture Soundscape App</title>
-    <meta charset="UTF-8">
-    <style>
-        /* CSS styles for the app */
-
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-
-        #main, #settings {
-            max-width: 600px;
-            margin: 0 auto;
-        }
-
-        h1, h2, h3, h4 {
-            text-align: center;
-        }
-
-        button {
-            margin: 5px;
-        }
-
-        label {
-            display: block;
-            margin: 5px 0;
-        }
-
-        input[type="number"], select {
-            width: 100%;
-            padding: 5px;
-            margin-top: 5px;
-        }
-
-        #settings {
-            display: none;
-        }
-
-        .effect-settings {
-            border: 1px solid #ccc;
-            padding: 10px;
-            margin: 10px 0;
-        }
-
-        #chooseFolderButton {
-            background-color: #4CAF50;
-            color: white;
-        }
-
-        #startButton {
-            background-color: #008CBA;
-            color: white;
-        }
-
-        #pauseButton, #stopButton, #backButton {
-            background-color: #f44336;
-            color: white;
-        }
-
-        #settingsButton {
-            background-color: #e7e7e7;
-            color: black;
-        }
-
-        #modeExplainButton {
-            background-color: #555555;
-            color: white;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>Soundscape File Loader</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    #output { margin-top: 20px; }
+    h3 { margin-bottom: 5px; }
+  </style>
 </head>
 <body>
-    <div id="main">
-        <h1>Rapture Soundscape App</h1>
-        <button id="chooseFolderButton">Choose Rapture Folder</button><br>
-        <button id="startButton">Start</button>
-        <button id="pauseButton">Pause</button>
-        <button id="stopButton">Stop</button><br>
-        <button id="settingsButton">Settings</button>
-    </div>
-    <div id="settings">
-        <h2>Settings</h2>
-        <div id="ambientSettings">
-            <!-- Ambient settings will be generated here -->
-        </div>
-        <div id="globalSettings">
-            <!-- Global settings will be generated here -->
-        </div>
-        <div id="effectsSettings">
-            <!-- Effects settings will be generated here -->
-        </div>
-        <button id="backButton">Back</button>
-    </div>
-    <script>
-        // JavaScript code for the app
+  <h1>Soundscape App</h1>
+  <p>
+    Please select the folder that contains your sound files.
+    This folder should have three subfolders: <strong>Ambience</strong>, <strong>Counts</strong>, and <strong>Events</strong>.
+  </p>
+  <button id="select-folder">Select Folder</button>
+  
+  <div id="output"></div>
 
-        let raptureDirectoryHandle;
-        let ambienceFiles = [];
-        let effectsFolders = {};
-        let settings = {
-            ambienceVolume: 80,
-            ambienceVolumeMin: 60,
-            ambienceVolumeMax: 100,
-            effectsDelayMin: 3,
-            effectsDelayMax: 10,
-            preferredSessionLength: 30,
-            mode: 'Rapture',
-            effectsSettings: {}
-        };
-        let ambientAudio = null;
-        let effectAudio = null;
-        let overlayAudio = null;
-        let isPlaying = false;
-        let sessionStartTime = null;
-        let sessionDuration = 0;
-        let effectTimeout = null;
-        let overlayTimeout = null;
-        let playedFiles = new Set();
+  <script>
+    // Function to handle folder selection and reading subdirectories
+    async function selectFolder() {
+      // Check if the File System Access API is supported
+      if ('showDirectoryPicker' in window) {
+        try {
+          // Prompt the user to select the parent folder
+          const dirHandle = await window.showDirectoryPicker();
+          // Define the expected subfolder names
+          const expectedCategories = ['Ambience', 'Counts', 'Events'];
+          // Object to store file lists for each category
+          const categories = { Ambience: [], Counts: [], Events: [] };
 
-        document.getElementById('chooseFolderButton').addEventListener('click', chooseRaptureFolder);
-        document.getElementById('startButton').addEventListener('click', startPlayback);
-        document.getElementById('pauseButton').addEventListener('click', pausePlayback);
-        document.getElementById('stopButton').addEventListener('click', stopPlayback);
-        document.getElementById('settingsButton').addEventListener('click', showSettings);
-        document.getElementById('backButton').addEventListener('click', hideSettings);
-
-        async function chooseRaptureFolder() {
-            try {
-                raptureDirectoryHandle = await window.showDirectoryPicker();
-                console.log('Rapture folder selected');
-                await scanFolders();
-            } catch (err) {
-                console.error(err);
-                alert('Error accessing folder. Please try again.');
-            }
-        }
-
-        async function scanFolders() {
-            // Reset previous data
-            ambienceFiles = [];
-            effectsFolders = {};
-            settings.effectsSettings = {};
-
-            // Read Ambience folder
-            try {
-                const ambienceHandle = await raptureDirectoryHandle.getDirectoryHandle('Ambience');
-                for await (const entry of ambienceHandle.values()) {
-                    if (entry.kind === 'file') {
-                        ambienceFiles.push(entry);
-                    }
+          // Iterate through entries in the selected directory
+          for await (const entry of dirHandle.values()) {
+            if (entry.kind === 'directory' && expectedCategories.includes(entry.name)) {
+              // Loop through files in each expected subfolder
+              for await (const fileEntry of entry.values()) {
+                if (fileEntry.kind === 'file') {
+                  // For now, we simply store the file name.
+                  categories[entry.name].push(fileEntry.name);
+                  // You could later call fileEntry.getFile() to access the file contents or blob.
                 }
-            } catch (err) {
-                console.error(err);
-                alert('Ambience folder not found.');
-                return;
+              }
             }
-
-            // Read Effects folder and its subfolders
-            try {
-                const effectsHandle = await raptureDirectoryHandle.getDirectoryHandle('Effects');
-                for await (const entry of effectsHandle.values()) {
-                    if (entry.kind === 'directory') {
-                        const folderName = entry.name;
-                        effectsFolders[folderName] = [];
-                        settings.effectsSettings[folderName] = {
-                            volume: 100,
-                            weight: 100,
-                            repeat: true,
-                            overlay: false,
-                            overlayDelay: 20,
-                            overlayWeight: 30
-                        };
-                        for await (const fileEntry of entry.values()) {
-                            if (fileEntry.kind === 'file') {
-                                effectsFolders[folderName].push(fileEntry);
-                            }
-                        }
-                    }
-                }
-            } catch (err) {
-                console.error(err);
-                alert('Effects folder not found.');
-                return;
-            }
-
-            if (ambienceFiles.length === 0) {
-                alert('No ambience files found.');
-                return;
-            }
-
-            console.log('Folders scanned');
-            buildSettingsUI();
+          }
+          // Display the collected file names
+          displayResults(categories);
+        } catch (err) {
+          console.error('Error selecting folder:', err);
+          document.getElementById('output').textContent = 'Error selecting folder: ' + err;
         }
+      } else {
+        // Notify the user if the API is not supported
+        document.getElementById('output').textContent =
+          'The File System Access API is not supported in this browser. Please use Chrome or Edge.';
+      }
+    }
 
-        function buildSettingsUI() {
-            const ambientSettingsDiv = document.getElementById('ambientSettings');
-            const globalSettingsDiv = document.getElementById('globalSettings');
-            const effectsSettingsDiv = document.getElementById('effectsSettings');
-            
-            // Build Ambient settings
-            ambientSettingsDiv.innerHTML = `
-                <h3>Ambient Settings</h3>
-                <label>Volume:
-                    <input type="number" id="ambienceVolume" value="${settings.ambienceVolume}" min="0" max="100">
-                </label>
-                <label>Volume Min:
-                    <input type="number" id="ambienceVolumeMin" value="${settings.ambienceVolumeMin}" min="0" max="100">
-                </label>
-                <label>Volume Max:
-                    <input type="number" id="ambienceVolumeMax" value="${settings.ambienceVolumeMax}" min="0" max="100">
-                </label>
-            `;
-
-            // Build Global settings
-            globalSettingsDiv.innerHTML = `
-                <h3>Global Settings</h3>
-                <label>Effects Delay Min (s):
-                    <input type="number" id="effectsDelayMin" value="${settings.effectsDelayMin}" min="0">
-                </label>
-                <label>Effects Delay Max (s):
-                    <input type="number" id="effectsDelayMax" value="${settings.effectsDelayMax}" min="0">
-                </label>
-                <label>Preferred Session Length (min):
-                    <input type="number" id="preferredSessionLength" value="${settings.preferredSessionLength}" min="0">
-                </label>
-                <label>Mode:
-                    <select id="modeSelect">
-                        <option value="Rapture">Rapture</option>
-                        <option value="Ascension">Ascension</option>
-                        <option value="Abyss">Abyss</option>
-                        <option value="Chaos">Chaos</option>
-                    </select>
-                </label>
-                <button id="modeExplainButton">Explain Mode</button>
-            `;
-            document.getElementById('modeSelect').value = settings.mode;
-            document.getElementById('modeExplainButton').addEventListener('click', explainMode);
-
-            // Build Effects settings
-            effectsSettingsDiv.innerHTML = '<h3>Effects Settings</h3>';
-            for (const folderName in effectsFolders) {
-                const effectSetting = settings.effectsSettings[folderName];
-                const effectDiv = document.createElement('div');
-                effectDiv.className = 'effect-settings';
-                effectDiv.innerHTML = `
-                    <h4>${folderName}</h4>
-                    <label>Volume:
-                        <input type="number" id="volume_${folderName}" value="${effectSetting.volume}" min="0" max="100">
-                    </label>
-                    <label>Weight:
-                        <input type="number" id="weight_${folderName}" value="${effectSetting.weight}" min="0" max="100">
-                    </label>
-                    <label>Repeat:
-                        <select id="repeat_${folderName}">
-                            <option value="true">Yes</option>
-                            <option value="false">No</option>
-                        </select>
-                    </label>
-                    <label>Overlay:
-                        <select id="overlay_${folderName}">
-                            <option value="false">No</option>
-                            <option value="true">Yes</option>
-                        </select>
-                    </label>
-                    <label>Overlay Delay (s):
-                        <input type="number" id="overlayDelay_${folderName}" value="${effectSetting.overlayDelay}" min="0">
-                    </label>
-                    <label>Overlay Weight:
-                        <input type="number" id="overlayWeight_${folderName}" value="${effectSetting.overlayWeight}" min="0" max="100">
-                    </label>
-                `;
-                effectDiv.querySelector(`#repeat_${folderName}`).value = effectSetting.repeat;
-                effectDiv.querySelector(`#overlay_${folderName}`).value = effectSetting.overlay;
-                effectsSettingsDiv.appendChild(effectDiv);
-            }
-            attachSettingsListeners();
+    // Function to display the scanned file lists on the page
+    function displayResults(categories) {
+      const output = document.getElementById('output');
+      output.innerHTML = '<h2>Found Files:</h2>';
+      // Loop through each category and create a list of files
+      for (const category in categories) {
+        const files = categories[category];
+        const section = document.createElement('div');
+        section.innerHTML = `<h3>${category}</h3>`;
+        if (files.length === 0) {
+          section.innerHTML += `<p>No files found in this folder.</p>`;
+        } else {
+          const list = document.createElement('ul');
+          files.forEach(file => {
+            const listItem = document.createElement('li');
+            listItem.textContent = file;
+            list.appendChild(listItem);
+          });
+          section.appendChild(list);
         }
+        output.appendChild(section);
+      }
+    }
 
-        function attachSettingsListeners() {
-            // Ambient settings listeners
-            document.getElementById('ambienceVolume').addEventListener('change', function() {
-                settings.ambienceVolume = parseInt(this.value);
-            });
-            document.getElementById('ambienceVolumeMin').addEventListener('change', function() {
-                settings.ambienceVolumeMin = parseInt(this.value);
-            });
-            document.getElementById('ambienceVolumeMax').addEventListener('change', function() {
-                settings.ambienceVolumeMax = parseInt(this.value);
-            });
-            // Global settings listeners
-            document.getElementById('effectsDelayMin').addEventListener('change', function() {
-                settings.effectsDelayMin = parseInt(this.value);
-            });
-            document.getElementById('effectsDelayMax').addEventListener('change', function() {
-                settings.effectsDelayMax = parseInt(this.value);
-            });
-            document.getElementById('preferredSessionLength').addEventListener('change', function() {
-                settings.preferredSessionLength = parseInt(this.value);
-            });
-            document.getElementById('modeSelect').addEventListener('change', function() {
-                settings.mode = this.value;
-            });
-            // Effects settings listeners
-            for (const folderName in effectsFolders) {
-                document.getElementById(`volume_${folderName}`).addEventListener('change', function() {
-                    settings.effectsSettings[folderName].volume = parseInt(this.value);
-                });
-                document.getElementById(`weight_${folderName}`).addEventListener('change', function() {
-                    settings.effectsSettings[folderName].weight = parseInt(this.value);
-                });
-                document.getElementById(`repeat_${folderName}`).addEventListener('change', function() {
-                    settings.effectsSettings[folderName].repeat = this.value === 'true';
-                });
-                document.getElementById(`overlay_${folderName}`).addEventListener('change', function() {
-                    settings.effectsSettings[folderName].overlay = this.value === 'true';
-                });
-                document.getElementById(`overlayDelay_${folderName}`).addEventListener('change', function() {
-                    settings.effectsSettings[folderName].overlayDelay = parseInt(this.value);
-                });
-                document.getElementById(`overlayWeight_${folderName}`).addEventListener('change', function() {
-                    settings.effectsSettings[folderName].overlayWeight = parseInt(this.value);
-                });
-            }
-        }
-
-        function explainMode() {
-            let explanation = '';
-            switch (settings.mode) {
-                case 'Rapture':
-                    explanation = 'Ambient track plays, Effects tracks are played on top according to their settings. Effects defined as Overlay are interspersed on top of Effects. A delay between min and max delay follows each Effect file that is not Overlay.';
-                    break;
-                case 'Ascension':
-                    explanation = 'As Rapture, but uses the Preferred Session Length to reduce the delay between effects files. Delay reduces linearly from maximum to minimum as the session approaches its preferred session length.';
-                    break;
-                case 'Abyss':
-                    explanation = 'As Rapture, but uses the Preferred Session Length to increase the delay between effects files. Delay increases linearly from minimum to maximum as the session approaches its preferred session length.';
-                    break;
-                case 'Chaos':
-                    explanation = 'As Rapture, but randomizes values for weight, repeat, and overlay state. Delay is randomized between zero and the maximum delay. Overlay delay is randomized between zero and the maximum delay. Every time an overlay check is made, there is a 20% chance that all these values are randomized again.';
-                    break;
-            }
-            alert(explanation);
-        }
-
-        function showSettings() {
-            document.getElementById('main').style.display = 'none';
-            document.getElementById('settings').style.display = 'block';
-        }
-
-        function hideSettings() {
-            document.getElementById('settings').style.display = 'none';
-            document.getElementById('main').style.display = 'block';
-        }
-
-        async function startPlayback() {
-            if (!raptureDirectoryHandle) {
-                alert('Please choose the Rapture folder first.');
-                return;
-            }
-            if (isPlaying) {
-                return;
-            }
-            isPlaying = true;
-            sessionStartTime = Date.now();
-            sessionDuration = settings.preferredSessionLength * 60 * 1000; // Convert minutes to milliseconds
-            playedFiles.clear();
-            playAmbientTrack();
-            scheduleNextEffect();
-        }
-
-        function pausePlayback() {
-            if (!isPlaying) {
-                return;
-            }
-            isPlaying = false;
-            if (ambientAudio) {
-                ambientAudio.pause();
-            }
-            if (effectAudio) {
-                effectAudio.pause();
-            }
-            if (overlayAudio) {
-                overlayAudio.pause();
-            }
-            clearTimeout(effectTimeout);
-            clearTimeout(overlayTimeout);
-        }
-
-        function stopPlayback() {
-            if (!isPlaying) {
-                return;
-            }
-            isPlaying = false;
-            if (ambientAudio) {
-                ambientAudio.pause();
-                ambientAudio = null;
-            }
-            if (effectAudio) {
-                effectAudio.pause();
-                effectAudio = null;
-            }
-            if (overlayAudio) {
-                overlayAudio.pause();
-                overlayAudio = null;
-            }
-            clearTimeout(effectTimeout);
-            clearTimeout(overlayTimeout);
-        }
-
-        async function playAmbientTrack() {
-            if (!isPlaying) return;
-            const randomIndex = Math.floor(Math.random() * ambienceFiles.length);
-            const fileHandle = ambienceFiles[randomIndex];
-            const file = await fileHandle.getFile();
-            const url = URL.createObjectURL(file);
-            ambientAudio = new Audio(url);
-            ambientAudio.volume = settings.ambienceVolume / 100;
-            ambientAudio.play();
-            ambientAudio.addEventListener('ended', function() {
-                playAmbientTrack(); // Play next ambient track
-            });
-            // Implement volume ramping if min and max are different
-            if (settings.ambienceVolumeMin !== settings.ambienceVolumeMax) {
-                ambientAudio.addEventListener('loadedmetadata', function() {
-                    rampAmbientVolume(ambientAudio.duration);
-                });
-            }
-        }
-
-        function rampAmbientVolume(duration) {
-            const volumeMin = settings.ambienceVolumeMin / 100;
-            const volumeMax = settings.ambienceVolumeMax / 100;
-            const volumeRange = volumeMax - volumeMin;
-            const startTime = ambientAudio.currentTime;
-            const endTime = startTime + duration;
-            const updateInterval = 1; // Update every second
-            const intervalId = setInterval(function() {
-                if (!isPlaying || ambientAudio.paused) {
-                    clearInterval(intervalId);
-                    return;
-                }
-                const currentTime = ambientAudio.currentTime;
-                const elapsedTime = currentTime - startTime;
-                const volume = volumeMin + (volumeRange * (elapsedTime / duration));
-                ambientAudio.volume = Math.min(Math.max(volume, 0), 1);
-                if (currentTime >= endTime) {
-                    clearInterval(intervalId);
-                }
-            }, updateInterval * 1000);
-        }
-
-        function scheduleNextEffect() {
-            if (!isPlaying) return;
-            let delay = getEffectDelay();
-            effectTimeout = setTimeout(playEffect, delay * 1000);
-            scheduleOverlayCheck();
-        }
-
-        function getEffectDelay() {
-            switch (settings.mode) {
-                case 'Ascension':
-                    return calculateAscensionDelay();
-                case 'Abyss':
-                    return calculateAbyssDelay();
-                case 'Chaos':
-                    return Math.random() * settings.effectsDelayMax;
-                default:
-                    return settings.effectsDelayMin + Math.random() * (settings.effectsDelayMax - settings.effectsDelayMin);
-            }
-        }
-
-        function calculateAscensionDelay() {
-            const elapsedTime = Date.now() - sessionStartTime;
-            const progress = elapsedTime / sessionDuration;
-            const delayRange = settings.effectsDelayMax - settings.effectsDelayMin;
-            return Math.max(settings.effectsDelayMax - (delayRange * progress), settings.effectsDelayMin);
-        }
-
-        function calculateAbyssDelay() {
-            const elapsedTime = Date.now() - sessionStartTime;
-            const progress = elapsedTime / sessionDuration;
-            const delayRange = settings.effectsDelayMax - settings.effectsDelayMin;
-            return Math.min(settings.effectsDelayMin + (delayRange * progress), settings.effectsDelayMax);
-        }
-
-        async function playEffect() {
-            if (!isPlaying) return;
-            const effect = await chooseEffect();
-            if (effect) {
-                effectAudio = new Audio(URL.createObjectURL(await effect.fileHandle.getFile()));
-                effectAudio.volume = effect.volume / 100;
-                effectAudio.play();
-                effectAudio.addEventListener('ended', function() {
-                    effectAudio = null;
-                });
-            }
-            scheduleNextEffect();
-        }
-
-        async function chooseEffect() {
-            const weightedEffects = [];
-            for (const folderName in effectsFolders) {
-                const effectSetting = settings.effectsSettings[folderName];
-                if (effectSetting.weight > 0) {
-                    const weight = effectSetting.weight;
-                    const files = effectsFolders[folderName];
-                    for (const fileHandle of files) {
-                        const filePath = `${folderName}/${fileHandle.name}`;
-                        if (!effectSetting.repeat && playedFiles.has(filePath)) {
-                            continue;
-                        }
-                        weightedEffects.push({
-                            fileHandle,
-                            folderName,
-                            volume: effectSetting.volume,
-                            weight
-                        });
-                    }
-                }
-            }
-            if (weightedEffects.length === 0) {
-                return null;
-            }
-            const totalWeight = weightedEffects.reduce((sum, effect) => sum + effect.weight, 0);
-            let random = Math.random() * totalWeight;
-            for (const effect of weightedEffects) {
-                if (random < effect.weight) {
-                    const filePath = `${effect.folderName}/${effect.fileHandle.name}`;
-                    playedFiles.add(filePath);
-                    return effect;
-                }
-                random -= effect.weight;
-            }
-            const lastEffect = weightedEffects[weightedEffects.length - 1];
-            const filePath = `${lastEffect.folderName}/${lastEffect.fileHandle.name}`;
-            playedFiles.add(filePath);
-            return lastEffect;
-        }
-
-        function scheduleOverlayCheck() {
-            if (!isPlaying) return;
-            let overlayDelay = getOverlayDelay();
-            overlayTimeout = setTimeout(checkOverlay, overlayDelay * 1000);
-        }
-
-        function getOverlayDelay() {
-            if (settings.mode === 'Chaos') {
-                return Math.random() * settings.effectsDelayMax;
-            }
-            // For simplicity, use the average overlay delay
-            let totalDelay = 0;
-            let count = 0;
-            for (const folderName in effectsFolders) {
-                const effectSetting = settings.effectsSettings[folderName];
-                if (effectSetting.overlay) {
-                    totalDelay += effectSetting.overlayDelay;
-                    count++;
-                }
-            }
-            return count > 0 ? totalDelay / count : 20;
-        }
-
-        async function checkOverlay() {
-            if (!isPlaying) return;
-            // For Chaos mode, randomize settings with 20% chance
-            if (settings.mode === 'Chaos' && Math.random() < 0.2) {
-                randomizeChaosSettings();
-            }
-            // Determine if an overlay effect should play
-            const shouldPlayOverlay = Math.random() * 100 < getOverlayWeight();
-            if (shouldPlayOverlay) {
-                const overlayEffect = await chooseOverlayEffect();
-                if (overlayEffect) {
-                    overlayAudio = new Audio(URL.createObjectURL(await overlayEffect.fileHandle.getFile()));
-                    overlayAudio.volume = overlayEffect.volume / 100;
-                    overlayAudio.play();
-                    overlayAudio.addEventListener('ended', function() {
-                        overlayAudio = null;
-                    });
-                }
-            }
-            scheduleOverlayCheck();
-        }
-
-        function getOverlayWeight() {
-            if (settings.mode === 'Chaos') {
-                return Math.random() * 100;
-            }
-            let totalWeight = 0;
-            let count = 0;
-            for (const folderName in effectsFolders) {
-                const effectSetting = settings.effectsSettings[folderName];
-                if (effectSetting.overlay) {
-                    totalWeight += effectSetting.overlayWeight;
-                    count++;
-                }
-            }
-            return count > 0 ? totalWeight / count : 0;
-        }
-
-        async function chooseOverlayEffect() {
-            const overlayEffects = [];
-            for (const folderName in effectsFolders) {
-                const effectSetting = settings.effectsSettings[folderName];
-                if (effectSetting.overlay && effectSetting.overlayWeight > 0) {
-                    const weight = effectSetting.overlayWeight;
-                    const files = effectsFolders[folderName];
-                    for (const fileHandle of files) {
-                        overlayEffects.push({
-                            fileHandle,
-                            folderName,
-                            volume: effectSetting.volume,
-                            weight
-                        });
-                    }
-                }
-            }
-            if (overlayEffects.length === 0) {
-                return null;
-            }
-            const totalWeight = overlayEffects.reduce((sum, effect) => sum + effect.weight, 0);
-            let random = Math.random() * totalWeight;
-            for (const effect of overlayEffects) {
-                if (random < effect.weight) {
-                    return effect;
-                }
-                random -= effect.weight;
-            }
-            return overlayEffects[overlayEffects.length - 1];
-        }
-
-        function randomizeChaosSettings() {
-            for (const folderName in effectsFolders) {
-                const effectSetting = settings.effectsSettings[folderName];
-                effectSetting.weight = Math.floor(Math.random() * 101);
-                effectSetting.repeat = Math.random() < 0.5;
-                effectSetting.overlay = Math.random() < 0.5;
-            }
-            settings.effectsDelayMin = 0;
-            settings.effectsDelayMax = Math.max(settings.effectsDelayMax, settings.effectsDelayMin);
-        }
-    </script>
+    // Attach event listener to the button
+    document.getElementById('select-folder').addEventListener('click', selectFolder);
+  </script>
 </body>
 </html>
